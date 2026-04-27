@@ -1,56 +1,89 @@
-const esbuild = require("esbuild");
+const esbuild = require('esbuild');
+const fs = require('fs');
+const path = require('path');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
-/**
- * @type {import('esbuild').Plugin}
- */
-const esbuildProblemMatcherPlugin = {
-	name: 'esbuild-problem-matcher',
-
-	setup(build) {
-		build.onStart(() => {
-			console.log('[watch] build started');
-		});
-		build.onEnd((result) => {
-			result.errors.forEach(({ text, location }) => {
-				console.error(`✘ [ERROR] ${text}`);
-				console.error(`    ${location.file}:${location.line}:${location.column}:`);
-			});
-			console.log('[watch] build finished');
-		});
-	},
-};
-
-async function main() {
-	const ctx = await esbuild.context({
-		entryPoints: [
-			'src/extension.ts'
-		],
-		bundle: true,
-		format: 'cjs',
-		minify: production,
-		sourcemap: !production,
-		sourcesContent: false,
-		platform: 'node',
-		outfile: 'dist/extension.js',
-		external: ['vscode'],
-		logLevel: 'silent',
-		plugins: [
-			/* add to the end of plugins array */
-			esbuildProblemMatcherPlugin,
-		],
-	});
-	if (watch) {
-		await ctx.watch();
-	} else {
-		await ctx.rebuild();
-		await ctx.dispose();
-	}
+async function copyFile(src, dest) {
+  await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+  await fs.promises.copyFile(src, dest);
 }
 
-main().catch(e => {
-	console.error(e);
-	process.exit(1);
+async function copyWebviewAssets() {
+  await copyFile(
+    path.join(__dirname, 'src', 'webview', 'chat.css'),
+    path.join(__dirname, 'dist', 'webview', 'chat.css')
+  );
+}
+
+async function buildExtension() {
+  return esbuild.context({
+    entryPoints: ['src/extension.ts'],
+    bundle: true,
+    format: 'cjs',
+    platform: 'node',
+    target: 'node20',
+    outfile: 'dist/extension.js',
+    external: ['vscode'],
+    sourcemap: !production,
+    minify: production,
+    logLevel: 'info',
+  });
+}
+
+async function buildWebview() {
+  return esbuild.context({
+    entryPoints: {
+      'webview/chat-ui': 'src/webview/chat-ui.ts',
+    },
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: 'es2020',
+    outdir: 'dist',
+    sourcemap: !production,
+    minify: production,
+    logLevel: 'info',
+  });
+}
+
+async function main() {
+  const extensionCtx = await buildExtension();
+  const webviewCtx = await buildWebview();
+
+  await copyWebviewAssets();
+
+  if (watch) {
+    await extensionCtx.watch();
+    await webviewCtx.watch();
+
+    fs.watch(
+      path.join(__dirname, 'src', 'webview'),
+      { persistent: true },
+      async (_eventType, filename) => {
+        if (filename === 'chat.css') {
+          try {
+            await copyWebviewAssets();
+            console.log('[watch] copied chat.css');
+          } catch (error) {
+            console.error('[watch] failed to copy chat.css', error);
+          }
+        }
+      }
+    );
+
+    console.log('[watch] build started');
+    return;
+  }
+
+  await extensionCtx.rebuild();
+  await webviewCtx.rebuild();
+  await extensionCtx.dispose();
+  await webviewCtx.dispose();
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

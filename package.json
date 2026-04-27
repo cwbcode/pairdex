@@ -9,13 +9,31 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": ["onCommand:agent-bridge.openChat"],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pairdex",
+          "title": "Pairdex",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "pairdex": [
+        {
+          "id": "pairdex.chatView",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
       {
-        "command": "agent-bridge.askCodex",
-        "title": "Agent Bridge: Ask Codex"
+        "command": "agent-bridge.openChat",
+        "title": "Agent Bridge: Open Chat"
       }
     ]
   },
